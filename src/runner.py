@@ -3,42 +3,59 @@ import sys
 import subprocess
 import json
 
-def main():
-    print("🚀 Booting Alnoms Performance Guardrail...")
-    
-    # 1. Grab inputs from the action.yml environment
-    fail_threshold = os.environ.get('FAIL_ON', '')
-    github_token = os.environ.get('GITHUB_TOKEN')
-    
-    # GitHub natively provides the base branch in PRs
-    base_ref = os.environ.get('GITHUB_BASE_REF', 'origin/main')
-    
-    print(f"📊 Threshold: {fail_threshold if fail_threshold else 'Warn Only'}")
-    
+def get_modified_python_files(base_ref):
+    """Uses Git to find which Python files were changed in the PR."""
     try:
-        # 2. Execute the Alnoms CLI in headless CI mode
-        # Note: This assumes your PyPI package CLI exposes a command like `alnoms-ci`
-        print(f"🔍 Scanning diff against {base_ref}...")
+        # Fetch origin to ensure we have the base branch history
+        subprocess.run(["git", "fetch", "origin", base_ref], capture_output=True, check=True)
         
-        # For testing right now, we will just run the module to ensure it installed correctly
-        # We will replace this with your actual JSON command in the next step
+        # Get the diff
         result = subprocess.run(
-            ["python", "-m", "alnoms", "--help"], 
+            ["git", "diff", "--name-only", f"origin/{base_ref}...HEAD"],
             capture_output=True,
             text=True,
             check=True
         )
-        
-        print("✅ Engine executed successfully.")
-        
-        # 3. Future Step: Parse the JSON from result.stdout and check thresholds
-        # If complexity > fail_threshold: sys.exit(1)
-        
-        sys.exit(0) # Exit 0 means the GitHub Action turns Green (Passed)
+        files = result.stdout.splitlines()
+        # Filter for only Python files
+        return [f for f in files if f.endswith('.py')]
+    except subprocess.CalledProcessError as e:
+        print(f"⚠️ Git diff failed (might be a direct push, not a PR): {e.stderr}", file=sys.stderr)
+        return []
+
+def main():
+    print("🚀 Booting Alnoms Performance Guardrail...")
+    
+    fail_threshold = os.environ.get('FAIL_ON', '')
+    # In GitHub Actions PRs, this env var holds the target branch (e.g., 'main')
+    base_ref = os.environ.get('GITHUB_BASE_REF', 'main') 
+    
+    print(f"📊 Threshold: {fail_threshold if fail_threshold else 'Warn Only'}")
+    
+    changed_files = get_modified_python_files(base_ref)
+    
+    if not changed_files:
+        print("✅ No Python files modified in this PR. Skipping Alnoms scan.")
+        sys.exit(0)
+
+    print(f"🔍 Found {len(changed_files)} Python files to scan: {changed_files}")
+    
+    # --- TEMPORARY MOCK ENGINE EXECUTION ---
+    # Once you update your PyPI package to accept file lists, we will pass `changed_files` here.
+    try:
+        print("⚙️ Executing Alnoms Engine...")
+        result = subprocess.run(
+            ["python", "-m", "alnoms", "--version"], # We will change this to the real scan command next
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        print(f"✅ Alnoms Engine Success: {result.stdout.strip()}")
+        sys.exit(0)
 
     except subprocess.CalledProcessError as e:
         print(f"❌ Alnoms Engine Execution Failed:\n{e.stderr}", file=sys.stderr)
-        sys.exit(1) # Exit 1 means the GitHub Action turns Red (Failed)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
