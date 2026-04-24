@@ -4,32 +4,34 @@ import subprocess
 import json
 
 def get_modified_python_files():
-    """Uses Git to find which Python files were changed in the PR or Push."""
+    """Uses Git to find which Python files were changed, excluding internal scripts."""
     event_name = os.environ.get('GITHUB_EVENT_NAME', 'push')
     base_ref = os.environ.get('GITHUB_BASE_REF', '')
     
+    # 🛡️ LIST FILES TO IGNORE
+    # We don't want the engine analyzing its own runner or local setup files
+    IGNORE_FILES = ['runner.py', 'setup.py', 'conftest.py']
+
     try:
-        # We add a 30-second timeout to prevent the runner from hanging indefinitely
         if event_name == 'pull_request' and base_ref:
-            # Scenario A: It's a Pull Request. Compare against the target branch.
             subprocess.run(["git", "fetch", "origin", base_ref], capture_output=True, check=True, timeout=30)
             cmd = ["git", "diff", "--name-only", f"origin/{base_ref}...HEAD"]
         else:
-            # Scenario B: It's a direct push. Compare the latest commit to the previous one.
             cmd = ["git", "diff", "--name-only", "HEAD~1...HEAD"]
             
         result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
         files = result.stdout.splitlines()
         
-        return [f for f in files if f.endswith('.py')]
+        # 🎯 Filter for Python files AND ensure they aren't in the ignore list
+        return [
+            f for f in files 
+            if f.endswith('.py') and not any(ignored in f for ignored in IGNORE_FILES)
+        ]
         
-    except subprocess.TimeoutExpired:
-        print("⚠️ Git diff timed out. The history might be too large or deep.", file=sys.stderr)
-        return []
     except Exception as e:
         print(f"⚠️ Git diff failed: {str(e)}", file=sys.stderr)
         return []
-
+    
 def main():
     print("🚀 Booting Alnoms Performance Guardrail...")
     
