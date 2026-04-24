@@ -8,14 +8,20 @@ on:
 jobs:
   alnoms-guardrail:
     runs-on: ubuntu-latest
+    # 🔓 ADD THIS BLOCK TO FIX THE 403 ERROR
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Required so the engine can run git diff
+          fetch-depth: 0 
 
       - name: Run Local Alnoms Action
-        uses: ./ # This tells GitHub to run the action.yml in THIS local repo
+        uses: ./ 
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           fail_on: 'O(N^3)'
