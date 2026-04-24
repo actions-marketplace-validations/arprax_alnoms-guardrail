@@ -1,0 +1,35 @@
+name: 'Alnoms Guardrail'
+description: 'Pre-production cost intelligence. Detects algorithmic complexity bottlenecks before they reach production.'
+author: 'Arprax LLC'
+branding:
+  icon: 'activity'
+  color: 'purple'
+
+inputs:
+  github_token:
+    description: 'GitHub token for posting PR comments'
+    required: true
+  fail_on:
+    description: 'Complexity threshold that triggers a failed build (e.g., O(N^3))'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python Environment
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11' # Matches the engine's requirements
+
+    - name: Install Alnoms Engine
+      shell: bash
+      run: pip install alnoms
+
+    - name: Execute Performance Audit
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        FAIL_ON: ${{ inputs.fail_on }}
+        # github.action_path points to the directory containing this action.yml
+      run: python ${{ github.action_path }}/src/runner.py

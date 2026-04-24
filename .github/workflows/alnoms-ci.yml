@@ -1,0 +1,21 @@
+name: Alnoms CI
+
+on: 
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  alnoms-guardrail:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required so the engine can run git diff
+
+      - name: Run Local Alnoms Action
+        uses: ./ # This tells GitHub to run the action.yml in THIS local repo
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          fail_on: 'O(N^3)'
