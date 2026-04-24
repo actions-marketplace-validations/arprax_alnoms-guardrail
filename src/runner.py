@@ -5,27 +5,29 @@ import json
 
 def get_modified_python_files():
     """Uses Git to find which Python files were changed in the PR or Push."""
-    # GitHub natively tells us what kind of event triggered the action
     event_name = os.environ.get('GITHUB_EVENT_NAME', 'push')
     base_ref = os.environ.get('GITHUB_BASE_REF', '')
     
     try:
+        # We add a 30-second timeout to prevent the runner from hanging indefinitely
         if event_name == 'pull_request' and base_ref:
             # Scenario A: It's a Pull Request. Compare against the target branch.
-            subprocess.run(["git", "fetch", "origin", base_ref], capture_output=True, check=True)
+            subprocess.run(["git", "fetch", "origin", base_ref], capture_output=True, check=True, timeout=30)
             cmd = ["git", "diff", "--name-only", f"origin/{base_ref}...HEAD"]
         else:
             # Scenario B: It's a direct push. Compare the latest commit to the previous one.
             cmd = ["git", "diff", "--name-only", "HEAD~1...HEAD"]
             
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
         files = result.stdout.splitlines()
         
-        # Filter for only Python files
         return [f for f in files if f.endswith('.py')]
         
-    except subprocess.CalledProcessError as e:
-        print(f"⚠️ Git diff failed: {e.stderr}", file=sys.stderr)
+    except subprocess.TimeoutExpired:
+        print("⚠️ Git diff timed out. The history might be too large or deep.", file=sys.stderr)
+        return []
+    except Exception as e:
+        print(f"⚠️ Git diff failed: {str(e)}", file=sys.stderr)
         return []
 
 def main():
@@ -42,7 +44,6 @@ def main():
 
     print(f"🔍 Found {len(changed_files)} Python files to scan: {changed_files}")
     
-    # --- REAL ENGINE EXECUTION ---
     try:
         print("⚙️ Executing Alnoms Engine...")
         
@@ -51,33 +52,35 @@ def main():
         if fail_threshold:
             cmd.extend(["--fail-on", fail_threshold])
             
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        # timeout=60 added here because scanning multiple files can take longer than a git diff
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=60)
         
         # Parse the JSON output from your engine
         report = json.loads(result.stdout)
         
         print(f"✅ Alnoms Engine Success. Scanned {report.get('scanned_files', 0)} files.")
         if report.get("issues"):
+            # We use indent=2 for a cleaner terminal output in the GitHub log
             print(f"⚠️ Issues detected: {json.dumps(report['issues'], indent=2)}")
         else:
             print("🛡️ No bottlenecks detected. Code is clean.")
             
         sys.exit(0)
 
+    except subprocess.TimeoutExpired:
+        print("❌ Error: Alnoms Engine timed out (exceeded 60s).", file=sys.stderr)
+        sys.exit(1)
     except subprocess.CalledProcessError as e:
-        # If your CLI exits with 1 (because it hit the fail threshold), it triggers this
         print(f"❌ Alnoms Performance Guardrail Triggered!", file=sys.stderr)
         try:
-            # Try to print the JSON report so the developer sees exactly what failed
+            # Engine failure usually contains the JSON report in stdout
             report = json.loads(e.stdout)
             print(json.dumps(report, indent=2), file=sys.stderr)
         except:
-            print(e.stderr, file=sys.stderr)
-            
+            print(e.stderr if e.stderr else "Unknown error in engine execution.", file=sys.stderr)
         sys.exit(1)
-
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Alnoms Engine Execution Failed:\n{e.stderr}", file=sys.stderr)
+    except Exception as e:
+        print(f"❌ Unexpected Error: {str(e)}", file=sys.stderr)
         sys.exit(1)
 
 if __name__ == "__main__":
