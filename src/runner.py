@@ -42,17 +42,39 @@ def main():
 
     print(f"🔍 Found {len(changed_files)} Python files to scan: {changed_files}")
     
-    # --- TEMPORARY MOCK ENGINE EXECUTION ---
+    # --- REAL ENGINE EXECUTION ---
     try:
         print("⚙️ Executing Alnoms Engine...")
-        result = subprocess.run(
-            ["python", "-m", "alnoms", "--version"], 
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        print(f"✅ Alnoms Engine Success: {result.stdout.strip()}")
+        
+        # Build the command: python -m alnoms ci file1.py file2.py --fail-on O(N^3)
+        cmd = ["python", "-m", "alnoms", "ci"] + changed_files
+        if fail_threshold:
+            cmd.extend(["--fail-on", fail_threshold])
+            
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        
+        # Parse the JSON output from your engine
+        report = json.loads(result.stdout)
+        
+        print(f"✅ Alnoms Engine Success. Scanned {report.get('scanned_files', 0)} files.")
+        if report.get("issues"):
+            print(f"⚠️ Issues detected: {json.dumps(report['issues'], indent=2)}")
+        else:
+            print("🛡️ No bottlenecks detected. Code is clean.")
+            
         sys.exit(0)
+
+    except subprocess.CalledProcessError as e:
+        # If your CLI exits with 1 (because it hit the fail threshold), it triggers this
+        print(f"❌ Alnoms Performance Guardrail Triggered!", file=sys.stderr)
+        try:
+            # Try to print the JSON report so the developer sees exactly what failed
+            report = json.loads(e.stdout)
+            print(json.dumps(report, indent=2), file=sys.stderr)
+        except:
+            print(e.stderr, file=sys.stderr)
+            
+        sys.exit(1)
 
     except subprocess.CalledProcessError as e:
         print(f"❌ Alnoms Engine Execution Failed:\n{e.stderr}", file=sys.stderr)

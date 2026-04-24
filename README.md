@@ -15,7 +15,13 @@ Instead of waiting for Datadog or AWS Cost Explorer to alert you that your infra
 2. **Deep Analysis:** Runs static and empirical complexity tests to map Big-O scaling limits.
 3. **Automated Enforcement:** Posts a detailed impact report as a PR comment and intentionally fails the build if configured complexity thresholds are breached.
 
----
+## 🔄 The Developer Workflow
+
+Alnoms is designed as a two-tier system to protect your infrastructure without slowing down your engineering velocity:
+
+1. **The Guardrail (Fast & Broad):** During the GitHub Action, Alnoms runs in headless CI mode. It uses lightning-fast static analysis to scan dozens of changed files in milliseconds, instantly blocking the Pull Request if a critical bottleneck is found. 
+2. **The Investigation (Deep & Narrow):** If the PR is blocked, the developer is instructed to run the engine locally on their machine using `alnoms analyze <file> --deep`. This shifts from static analysis to dynamic execution, providing a rich, interactive terminal report with empirical data to help them surgically fix the code before pushing a new commit.
+
 
 ## 🛠️ Quick Start Integration
 
@@ -67,6 +73,5 @@ When a bottleneck is detected, Alnoms posts a structured intelligence report dir
 > 
 > **Recommendation:** Utilize vectorized operations or pre-allocate memory buffers before merging.
 
----
 
 **Built with precision by [Arprax](https://arprax.com).

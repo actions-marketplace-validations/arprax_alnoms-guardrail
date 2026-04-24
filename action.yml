@@ -1,6 +1,6 @@
 name: 'Alnoms Guardrail'
 description: 'Pre-production cost intelligence. Detects algorithmic complexity bottlenecks before they reach production.'
-author: 'Arprax LLC'
+author: 'Arprax'
 branding:
   icon: 'activity'
   color: 'purple'
