@@ -119,9 +119,9 @@ To inspect full runtime behavior and validate scaling:
 
 ```bash
 alnoms analyze {files_list} --deep
-        ```
-            ---
-    *Alnoms CI Guardrail · Built by Arprax*
+```
+---
+*Alnoms CI Guardrail · Built by Arprax*
 """
     return body
 
