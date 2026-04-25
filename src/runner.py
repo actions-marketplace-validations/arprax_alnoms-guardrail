@@ -53,24 +53,24 @@ def post_github_comment(report):
     issues = report.get("issues", [])
     if not issues:
         body = "### ✅ Alnoms CI Output: Passed\nNo performance regressions detected. Code scales efficiently."
-        else:
-                rows = ""
-                suggestions = ""
-                for issue in issues:
-                    # Dynamically build the table rows
-                    rows += f"| `{issue['file']}` | `{issue['function']}` | Likely {issue['complexity']} scaling |\n"
-                    
-                    # Dynamically build the deduplicated suggestion list
-                    if issue.get('suggestion') and issue['suggestion'] not in suggestions:
-                        suggestions += f"- {issue['suggestion']}\n"
-                
-                # Fallback if no specific suggestion is provided
-                if not suggestions:
-                    suggestions = "- Review the flagged functions and optimize data structures or loops to reduce complexity.\n"
+    else:
+        rows = ""
+        suggestions = ""
+        for issue in issues:
+            # Dynamically build the table rows
+            rows += f"| `{issue['file']}` | `{issue['function']}` | Likely {issue['complexity']} scaling |\n"
+            
+            # Dynamically build the deduplicated suggestion list
+            if issue.get('suggestion') and issue['suggestion'] not in suggestions:
+                suggestions += f"- {issue['suggestion']}\n"
+        
+        # Fallback if no specific suggestion is provided
+        if not suggestions:
+            suggestions = "- Review the flagged functions and optimize data structures or loops to reduce complexity.\n"
 
-                target_file = issues[0]['file']
+        target_file = issues[0]['file']
 
-                body = f"""❌ **Alnoms Blocked This PR**
+        body = f"""❌ **Alnoms Blocked This PR**
 
         ### Performance Regression Detected
         A high-risk non-linear scaling pattern was identified in this change.
