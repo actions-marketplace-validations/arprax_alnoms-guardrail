@@ -1,5 +1,6 @@
 import os
 import sys
+import io
 import subprocess
 import json
 import urllib.request
@@ -18,7 +19,6 @@ def get_modified_python_files():
             cmd = ["git", "diff", "--name-only", f"origin/{base_ref}...HEAD"]
         else:
             cmd = ["git", "diff", "--name-only", "HEAD~1...HEAD"]
-            
         result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
         files = result.stdout.splitlines()
         
@@ -123,6 +123,7 @@ def post_github_comment(report):
         print(f"⚠️ Failed to post comment: {str(e)}")
 
 def main():
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     print("🚀 Booting Alnoms Performance Guardrail...")
     fail_threshold = os.environ.get('FAIL_ON', '')
 
