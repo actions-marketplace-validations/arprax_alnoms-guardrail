@@ -6,19 +6,32 @@ import json
 import urllib.request
 
 def get_modified_python_files():
-    """Uses Git to find which Python files were changed, excluding internal scripts."""
+    """Uses Git/GitHub to find which Python files were changed, excluding internal scripts."""
     event_name = os.environ.get('GITHUB_EVENT_NAME', 'push')
-    base_ref = os.environ.get('GITHUB_BASE_REF', '')
     
     # 🛡️ Files to skip (infrastructure and runner itself)
     IGNORE_FILES = ['runner.py', 'setup.py', 'conftest.py']
 
     try:
-        if event_name == 'pull_request' and base_ref:
-            subprocess.run(["git", "fetch", "origin", base_ref], capture_output=True, check=True, timeout=30)
-            cmd = ["git", "diff", "--name-only", f"origin/{base_ref}...HEAD"]
+        if event_name == 'pull_request':
+            # Use gh pr view to get the exact files changed in the PR reliably
+            pr_number = None
+            event_path = os.environ.get('GITHUB_EVENT_PATH')
+            if event_path:
+                with open(event_path) as f:
+                    event_data = json.load(f)
+                    pr_number = event_data.get('pull_request', {}).get('number')
+            
+            if pr_number:
+                # Ask GitHub directly what files changed in this PR
+                cmd = ["gh", "pr", "view", str(pr_number), "--json", "files", "-q", ".files[].path"]
+            else:
+                # Fallback if PR number isn't found
+                cmd = ["git", "diff", "--name-only", "HEAD~1...HEAD"]
         else:
+            # Standard push event logic
             cmd = ["git", "diff", "--name-only", "HEAD~1...HEAD"]
+            
         result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
         files = result.stdout.splitlines()
         
@@ -27,9 +40,9 @@ def get_modified_python_files():
             if f.endswith('.py') and not any(ignored in f for ignored in IGNORE_FILES)
         ]
     except Exception as e:
-        print(f"⚠️ Git diff failed: {str(e)}", file=sys.stderr)
+        print(f"⚠️ Failed to get modified files: {str(e)}", file=sys.stderr)
         return []
-
+    
 def post_github_comment(report):
     """Formats the Alnoms JSON report and posts it as an authoritative GitHub PR comment."""
     token = os.environ.get('GITHUB_TOKEN')
