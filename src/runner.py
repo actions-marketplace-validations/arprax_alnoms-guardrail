@@ -1,220 +1,266 @@
 import os
 import sys
+import io
 import json
 import subprocess
 import urllib.request
+import urllib.parse
 
-# -----------------------------
-# CONFIG
-# -----------------------------
-IGNORE_FILES = {'runner.py', 'setup.py', 'conftest.py'}
-TIMEOUT = int(os.environ.get("ALNOMS_TIMEOUT", 60))
+TIMEOUT = 60
+IGNORE_FILES = {"runner.py", "setup.py", "conftest.py"}
 
+GITHUB_API = "https://api.github.com"
 
-# -----------------------------
-# GET MODIFIED FILES
-# -----------------------------
+def github_request(path, method="GET", data=None):
+    """Minimal GitHub REST API client using urllib."""
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        raise RuntimeError("GITHUB_TOKEN is required for GitHub API calls.")
+
+    url = f"{GITHUB_API}{path}"
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json",
+        "Content-Type": "application/json",
+    }
+
+    body = None
+    if data is not None:
+        body = json.dumps(data).encode("utf-8")
+
+    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+        content = resp.read().decode("utf-8")
+        return json.loads(content) if content else None
+
+def get_event():
+    """Load the GitHub event payload."""
+    event_path = os.environ.get("GITHUB_EVENT_PATH")
+    if not event_path or not os.path.exists(event_path):
+        return {}
+    with open(event_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
 def get_modified_python_files():
-    """Find modified Python files using GitHub event payload or git fallback."""
+    """
+    Determine which Python files were modified.
+
+    - For pull_request: use GitHub REST API to list changed files.
+    - For push: use git diff HEAD~1...HEAD.
+    """
+    event_name = os.environ.get("GITHUB_EVENT_NAME", "push")
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    event = get_event()
+
     try:
-        event_path = os.environ.get('GITHUB_EVENT_PATH')
-        files = []
+        if event_name == "pull_request":
+            pr_number = event.get("pull_request", {}).get("number")
+            if not pr_number:
+                print("ℹ️ No PR number found in event payload.", file=sys.stderr)
+                return []
 
-        # ✅ Preferred: GitHub event payload
-        if event_path and os.path.exists(event_path):
-            with open(event_path) as f:
-                event_data = json.load(f)
+            page = 1
+            files = []
+            while True:
+                path = f"/repos/{repo}/pulls/{pr_number}/files?per_page=100&page={page}"
+                batch = github_request(path, method="GET")
+                if not batch:
+                    break
+                files.extend(batch)
+                if len(batch) < 100:
+                    break
+                page += 1
 
-            # Pull Request
-            if "pull_request" in event_data:
-                files = [
-                    f["filename"]
-                    for f in event_data.get("pull_request", {}).get("files", [])
-                ]
+            changed = [f["filename"] for f in files]
 
-        # ⚠️ Fallback: git diff
-        if not files:
+        else:
             cmd = ["git", "diff", "--name-only", "HEAD~1...HEAD"]
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=TIMEOUT
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=TIMEOUT,
             )
-            files = result.stdout.splitlines()
+            changed = result.stdout.splitlines()
 
-        # ✅ Filter Python files safely
-        return [
-            f for f in files
+        py_files = [
+            f for f in changed
             if f.endswith(".py") and os.path.basename(f) not in IGNORE_FILES
         ]
+
+        return py_files
 
     except Exception as e:
         print(f"⚠️ Failed to get modified files: {e}", file=sys.stderr)
         return []
 
 
-# -----------------------------
-# FORMAT COMMENT
-# -----------------------------
 def build_comment(report):
+    """Turn the Alnoms JSON report into a Markdown PR comment."""
+    decision = report.get("decision", {})
+    status = decision.get("status", "PASS")
+    reason = decision.get("reason", "No performance regressions detected.")
+
+    # PASS path
+    if status == "PASS":
+        summary = report.get("summary", {})
+        sev = summary.get("by_severity", {})
+        worst_comp = summary.get("worst_complexity", "Unknown")
+        total = summary.get("total_issues", 0)
+        risk = summary.get("risk_level", "LOW")
+
+        return f"""### ✅ Alnoms CI Output: Passed
+
+> {reason}
+
+**Summary**
+- System Risk Level: `{risk}`
+- Worst Complexity: `{worst_comp}`
+- Total Issues: {total} ({sev.get('CRITICAL', 0)} CRITICAL, {sev.get('HIGH', 0)} HIGH, {sev.get('MEDIUM', 0)} MEDIUM)
+
+Code scales efficiently for this change.
+"""
+
+    # BLOCK path
+    primary = report.get("primary_trigger", {})
+    summary = report.get("summary", {})
     issues = report.get("issues", [])
 
-    if not issues:
-        return """### ✅ Alnoms CI Output: Passed
-No performance regressions detected. Code scales efficiently."""
+    sev = summary.get("by_severity", {})
+    worst_comp = summary.get("worst_complexity", "Unknown")
+    total = summary.get("total_issues", 0)
+    risk = summary.get("risk_level", "UNKNOWN")
 
-    rows = ""
-    seen_suggestions = set()
-    suggestions = ""
+    # Evidence table
+    evidence_table = ""
+    if len(issues) > 1:
+        rows = ""
+        for issue in issues[1:]:
+            rows += (
+                f"| `{issue.get('file', 'unknown')}` "
+                f"| `{issue.get('function', 'unknown')}` "
+                f"| `{issue.get('severity', 'UNKNOWN')}` "
+                f"| `{issue.get('complexity', 'Unknown')}` |\n"
+            )
 
-    for issue in issues:
-        file = issue.get("file", "unknown")
-        function = issue.get("function", "unknown")
-        complexity = issue.get("complexity", "non-linear")
-
-        rows += f"| `{file}` | `{function}` | Likely {complexity} scaling |\n"
-
-        suggestion = issue.get("suggestion")
-        if suggestion and suggestion not in seen_suggestions:
-            seen_suggestions.add(suggestion)
-            suggestions += f"- {suggestion}\n"
-
-    if not suggestions:
-        suggestions = "- Optimize loops or data structures to reduce complexity.\n"
-
-    files_list = ", ".join(sorted({i.get("file", "") for i in issues}))
-
-    body = f"""❌ **Alnoms Blocked This PR**
-
-### Performance Regression Detected
-
-A high-risk non-linear scaling pattern was identified in this change.
-
-| File | Function | Detected Behavior |
-|------|----------|------------------|
+        evidence_table = f"""### 🔍 Additional Evidence
+| File | Function | Severity | Complexity |
+|------|----------|----------|------------|
 {rows}
 ---
+"""
 
-### 📊 Estimated Impact
+    files_list = " ".join(
+        sorted({i.get("file") for i in issues if i.get("file")})
+    )
 
-- Input growth 10× → runtime may increase ~20–50×  
-- Significant degradation under moderate to large workloads  
-- Increased compute cost risk in production environments  
+    return f"""❌ **Alnoms Blocked This PR**
 
----
-
-### ⛔ Decision
-
-**This PR is blocked due to a performance regression.**
+> **Verdict:** {reason}
 
 ---
 
-### 💡 Suggested Fix
+### 🚨 Primary Trigger
+**Function:** `{primary.get('function', 'unknown')}` (in `{primary.get('file', 'unknown')}`)  
+**Severity:** `{primary.get('severity', 'UNKNOWN')}` | **Complexity:** `{primary.get('complexity', 'Unknown')}`  
+**Issue:** {primary.get('issue', 'Unknown bottleneck')}
 
-{suggestions.strip()}
+**💡 Suggested Fix**
+> {primary.get('suggestion', 'Optimize data structures or loops to reduce complexity.')}
 
 ---
 
-### 🔍 Deep Analysis (Optional)
+### 📊 Impact Summary
+- **System Risk Level:** `{risk}`
+- **Worst Complexity:** `{worst_comp}`
+- **Total Issues:** {total} ({sev.get('CRITICAL', 0)} CRITICAL, {sev.get('HIGH', 0)} HIGH, {sev.get('MEDIUM', 0)} MEDIUM)
 
-To inspect full runtime behavior and validate scaling:
+---
+
+{evidence_table.strip()}
+
+### 🔬 Deep Analysis (Optional)
 
 ```bash
 alnoms analyze {files_list} --deep
 ```
----
-*Alnoms CI Guardrail · Built by Arprax*
+*Alnoms CI Guardrail · Built by [Arprax](https://arprax.com)*
 """
-    return body
 
-
-# -----------------------------
-# POST COMMENT
-# -----------------------------
 def post_github_comment(report):
-    token = os.environ.get('GITHUB_TOKEN')
-    repo = os.environ.get('GITHUB_REPOSITORY')
-    pr_number = None
+    """Post a single authoritative comment to the PR (if this is a PR)."""
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    event = get_event()
+    pr_number = event.get("pull_request", {}).get("number")
 
-    try:
-        event_path = os.environ.get('GITHUB_EVENT_PATH')
-        if event_path:
-            with open(event_path) as f:
-                event_data = json.load(f)
-                pr_number = event_data.get('pull_request', {}).get('number')
-    except Exception:
-        pass
-
-    if not token or not repo or not pr_number:
-        print("ℹ️ Skipping PR comment: Not a PR or missing token.")
+    if not repo or not pr_number:
+        print("ℹ️ Skipping PR comment: Not a Pull Request.")
         return
 
     body = build_comment(report)
-
-    url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
-    headers = {
-        "Authorization": f"token {token}",
-        "Accept": "application/vnd.github.v3+json",
-        "Content-Type": "application/json"
-    }
-
-    data = json.dumps({"body": body}).encode("utf-8")
+    path = f"/repos/{repo}/issues/{pr_number}/comments"
 
     try:
-        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-        with urllib.request.urlopen(req) as response:
-            if response.getcode() == 201:
-                print("💬 Posted Alnoms CI report.")
+        github_request(path, method="POST", data={"body": body})
+        print("💬 Posted Alnoms CI report as PR comment.")
     except Exception as e:
-        print(f"⚠️ Failed to post comment: {e}")
+        print(f"⚠️ Failed to post PR comment: {e}", file=sys.stderr)
 
-
-# -----------------------------
-# MAIN
-# -----------------------------
 def main():
-    print("🚀 Booting Alnoms Performance Guardrail...")
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
+    print("🚀 Booting Alnoms Performance Guardrail...")
     fail_threshold = os.environ.get("FAIL_ON", "")
+
     changed_files = get_modified_python_files()
 
     if not changed_files:
         print("✅ No Python files modified. Skipping scan.")
         sys.exit(0)
 
-    print(f"🔍 Scanning files: {changed_files}")
+    print(f"🔍 Found {len(changed_files)} Python files to scan: {changed_files}")
+
+    cmd = ["python", "-m", "alnoms", "ci"] + changed_files
+    if fail_threshold:
+        cmd.extend(["--fail-on", fail_threshold])
 
     try:
-        cmd = ["python", "-m", "alnoms", "ci"] + changed_files
-
-        if fail_threshold:
-            cmd += ["--fail-on", fail_threshold]
-
+        print("⚙️ Executing Alnoms Engine...")
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=TIMEOUT
+            check=True,
+            timeout=TIMEOUT,
         )
+        report = json.loads(result.stdout)
 
-        try:
-            report = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            print("❌ Failed to parse Alnoms output", file=sys.stderr)
-            print(result.stdout, file=sys.stderr)
-            sys.exit(1)
-
+        print(json.dumps(report, indent=2))
         post_github_comment(report)
 
-        if result.returncode != 0:
-            print("❌ Performance regression detected.", file=sys.stderr)
+        scanned = report.get("metadata", {}).get("scanned_files", 0)
+        print(f"✅ Alnoms Engine Success. Scanned {scanned} files.")
+
+        if report.get("decision", {}).get("status") == "BLOCK":
+            print("❌ Alnoms Performance Guardrail Triggered! Blocking PR.", file=sys.stderr)
             sys.exit(1)
 
-        print("✅ No performance issues detected.")
         sys.exit(0)
 
-    except Exception as e:
-        print(f"❌ Unexpected error: {e}", file=sys.stderr)
+    except subprocess.CalledProcessError as e:
+        print("❌ Alnoms Engine failed.", file=sys.stderr)
+        try:
+            report = json.loads(e.stdout or "{}")
+            print(json.dumps(report, indent=2), file=sys.stderr)
+            post_github_comment(report)
+        except Exception:
+            print(e.stderr or "Unknown error in engine execution.", file=sys.stderr)
         sys.exit(1)
 
+    except Exception as e:
+        print(f"❌ Unexpected Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
