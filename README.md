@@ -50,6 +50,42 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           fail_on: 'O(N^3)' # Block the PR if quadratic or worse is detected
 ```
+## 🔓 Required Permissions
+
+To allow the Alnoms bot to post the performance table directly to your Pull Request conversation, you must ensure the workflow has write access.
+
+1. **In your YAML:** Ensure the `permissions` block is present (as shown in the Quick Start).
+2. **In GitHub Settings:** - Navigate to **Settings > Actions > General**.
+   - Under **Workflow permissions**, select **Read and write permissions**.
+   - Click **Save**.
+
+> [!CAUTION]
+> If these permissions are not set, the action will still run, but you will see a `403 Forbidden` error in the logs and the PR comment will not appear.
+
+---
+
+## 🏢 Enterprise Intelligence
+
+Arprax Enterprise users can connect their **Alnoms Guardrail** to the Arprax Dashboard to unlock advanced fiscal observability:
+
+* **Regression Tracking:** Monitor how algorithmic complexity evolves across different team releases.
+* **Empirical Cost Estimation:** Convert Big-O complexity into actual USD cost estimates based on your specific cloud provider's compute rates.
+* **Deep Empirical Scans:** Automated triggers for `--deep` analysis on critical production paths.
+
+---
+
+## 🔬 Complexity Intelligence Logic
+
+Alnoms doesn't just flag "slow" code; it identifies **Algorithmic Anti-Patterns** that lead to non-linear scaling:
+
+| Complexity | Status | Risk Level | Example Pattern |
+| :--- | :--- | :--- | :--- |
+| $O(1) / O(\log N)$ | ✅ Pass | Optimal | Hash lookups, Binary search |
+| $O(N)$ | ⚠️ Warning | Moderate | Membership tests (`in`) inside a single loop |
+| $O(N^2)$ | ❌ Block | High | Nested loops, Incremental string/list concatenation |
+| $O(N^3)$ | ❌ Block | Critical | Triple-nested loops, Matrix operations without optimization |
+
+*Complexity is determined via static AST analysis and verified against the Arprax complexity heuristics engine.*
 
 ## ⚙️ Configuration Inputs
 
