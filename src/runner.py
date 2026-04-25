@@ -53,40 +53,42 @@ def post_github_comment(report):
     issues = report.get("issues", [])
     if not issues:
         body = "### ✅ Alnoms CI Output: Passed\nNo performance regressions detected. Code scales efficiently."
-    else:
-        rows = ""
-        suggestions = ""
-        for issue in issues:
-            rows += f"| `{issue['file']}` | `{issue['function']}` | Non-linear scaling (likely {issue['complexity']}) |\n"
-            if issue.get('suggestion'):
-                suggestions += f"- **{issue['function']}**: {issue['suggestion']}\n"
-        
-        # Fallback if no specific suggestion is provided by the engine
-        if not suggestions:
-            suggestions = "- Review the flagged functions and optimize data structures or loops to reduce complexity.\n"
+        else:
+                rows = ""
+                suggestions = ""
+                for issue in issues:
+                    # Dynamically build the table rows
+                    rows += f"| `{issue['file']}` | `{issue['function']}` | Likely {issue['complexity']} scaling |\n"
+                    
+                    # Dynamically build the deduplicated suggestion list
+                    if issue.get('suggestion') and issue['suggestion'] not in suggestions:
+                        suggestions += f"- {issue['suggestion']}\n"
+                
+                # Fallback if no specific suggestion is provided
+                if not suggestions:
+                    suggestions = "- Review the flagged functions and optimize data structures or loops to reduce complexity.\n"
 
-        # Use the first flagged file for the copy-paste deep analysis command
-        target_file = issues[0]['file']
+                target_file = issues[0]['file']
 
-        body = f"""❌ **Alnoms Blocked This PR**
+                body = f"""❌ **Alnoms Blocked This PR**
 
         ### Performance Regression Detected
-        A high-risk performance pattern was identified in this change.
+        A high-risk non-linear scaling pattern was identified in this change.
 
         | File | Function | Detected Behavior |
-        | :--- | :--- | :--- |
+        |------|----------|-------------------|
         {rows}
         ---
 
         ### 📊 Estimated Impact
         - Input growth 10× → runtime may increase ~20–50×  
-        - Degrades performance significantly at scale  
-        - Risk of increased compute cost in production  
+        - Significant degradation under moderate to large workloads  
+        - Increased compute cost risk in production environments  
 
         ---
 
         ### ⛔ Decision
-        **This PR is blocked due to a potential performance regression.**
+        **This PR is blocked due to a performance regression risk.**
 
         ---
 
@@ -96,7 +98,7 @@ def post_github_comment(report):
         ---
 
         ### 🔍 Deep Analysis (Optional)
-        For detailed runtime behavior and validation, run the following locally:
+        To inspect full runtime behavior and validate scaling:
 
         ```bash
         alnoms analyze {target_file} --deep
