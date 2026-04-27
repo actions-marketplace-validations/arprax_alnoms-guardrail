@@ -3,9 +3,9 @@
 [![GitHub Marketplace](https://img.shields.io/badge/Marketplace-Alnoms_Guardrail-blue.svg)](https://github.com/marketplace/actions/alnoms-performance-guardrail)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-**Stop expensive performance mistakes from reaching production.**
+**Stop code that slows your system as it scales from reaching production.**
 
-The Alnoms GitHub Action acts as a CI/CD FinOps compliance gate for your Python codebase. By detecting inefficient algorithmic patterns (like $O(N^2)$ or $O(N^3)$) early in the Pull Request cycle, Alnoms prevents code that will cause massive cloud compute spikes from ever being merged.
+The Alnoms GitHub Action acts as a CI/CD FinOps compliance gate for your Python codebase. By detecting inefficient scaling patterns (like $O(N^2)$ or $O(N^3)$) early in the Pull Request cycle, Alnoms prevents code that will cause massive cloud compute spikes from ever being merged.
 
 ## 💡 How it Works
 
@@ -35,6 +35,11 @@ on:
     paths:
       - '**.py' # Only trigger when Python files are changed
 
+# REQUIRED: Allow Alnoms to post the report to the Pull Request
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   performance-audit:
     runs-on: ubuntu-latest
@@ -44,11 +49,19 @@ jobs:
         with:
           fetch-depth: 0 # Required for Alnoms to perform git diff
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Alnoms Engine
+        run: pip install alnoms==1.1.2
+
       - name: Run Alnoms Guardrail
         uses: arpraxadmin/alnoms-action@main
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          fail_on: 'O(N^3)' # Block the PR if quadratic or worse is detected
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FAIL_ON: 'O(N^3)' # Block the PR if cubic or worse is detected
 ```
 ## 🔓 Required Permissions
 
@@ -74,7 +87,7 @@ Arprax Enterprise users can connect their **Alnoms Guardrail** to the Arprax Das
 
 ---
 
-## 🔬 Complexity Intelligence Logic
+## 🔬 How scaling issues are detected
 
 Alnoms doesn't just flag "slow" code; it identifies **Algorithmic Anti-Patterns** that lead to non-linear scaling:
 
@@ -99,15 +112,47 @@ Alnoms doesn't just flag "slow" code; it identifies **Algorithmic Anti-Patterns*
 
 When a bottleneck is detected, Alnoms posts a structured intelligence report directly to the PR:
 
-> ❌ **Alnoms Performance Guardrail: Failed**
-> 
-> **File:** `data_pipeline/aggregator.py`  
-> **Function:** `merge_orderbooks()`  
-> **Detected Complexity:** `O(N^2)` (Quadratic)  
+>❌ **Alnoms Blocked This PR**
 >
-> **Cost Impact Warning:** This function contains an incremental concatenation loop. At production scale (100k+ rows), this will cause an exponential spike in compute cycles, potentially leading to container OOM kills and degraded service.
-> 
-> **Recommendation:** Utilize vectorized operations or pre-allocate memory buffers before merging.
-
-
-**Built with precision by [Arprax](https://arprax.com).
+>### Performance Regression Detected
+>
+>A high-risk non-linear scaling pattern was identified in this change.
+>
+>| File | Function | Detected Behavior |
+>|------|----------|------------------|
+>| `examples/scripts/smoke_test.py` | `exponential_disaster_test` | Likely O(N^3) scaling |
+>| `examples/scripts/smoke_test.py` | `quadratic_trap` | Likely O(N^2) scaling |
+>| `examples/scripts/smoke_test.py` | `performance_regression_test` | Likely O(N^2) scaling |
+>
+>---
+>
+>### 📊 Estimated Impact
+>
+>- Input growth 10× → runtime may increase ~20–50×  
+>- Significant degradation under moderate to large workloads  
+>- Increased compute cost risk in production environments  
+>
+>---
+>
+>### ⛔ Decision
+>
+>**This PR is blocked due to a performance regression.**
+>
+>---
+>
+>### 💡 Suggested Fix
+>
+>- Cubic complexity detected. This triple-nested loop is a high-risk algorithmic bottleneck. Consider pruning, memoization, or reducing the search space.
+>- Membership checks on lists inside loops are O(N). Convert to a set for O(1) lookups.
+>
+>---
+>
+>### 🔍 Deep Analysis (Optional)
+>
+>To inspect full runtime behavior and validate scaling:
+>
+>```bash
+>alnoms analyze examples/scripts/smoke_test.py --deep
+>```
+>---
+>*Alnoms CI Guardrail · Built by Arprax*
