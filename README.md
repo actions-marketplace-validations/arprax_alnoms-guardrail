@@ -55,13 +55,13 @@ jobs:
           python-version: '3.11'
 
       - name: Install Alnoms Engine
-        run: pip install alnoms==1.1.2
+        run: pip install alnoms
 
       - name: Run Alnoms Guardrail
         uses: arpraxadmin/alnoms-action@main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FAIL_ON: 'O(N^3)' # Block the PR if cubic or worse is detected
+          FAIL_ON: 'O(N^2)'
 ```
 ## 🔓 Required Permissions
 
