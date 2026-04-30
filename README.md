@@ -33,7 +33,7 @@ name: Alnoms Cost Intelligence Guardrail
 on:
   pull_request:
     paths:
-      - '**.py' # Only trigger when Python files are changed
+      - "**.py" # Only trigger when Python files are changed
 
 # REQUIRED: Allow Alnoms to post the report to the Pull Request
 permissions:
@@ -47,21 +47,22 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Required for Alnoms to perform git diff
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install Alnoms Engine
         run: pip install alnoms
 
       - name: Run Alnoms Guardrail
-        uses: arpraxadmin/alnoms-action@main
+        uses: arprax/alnoms-guardrail@main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FAIL_ON: 'O(N^2)'
+
 ```
 ## 🔓 Required Permissions
 
