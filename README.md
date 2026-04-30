@@ -28,40 +28,32 @@ Alnoms is designed as a two-tier system to protect your infrastructure without s
 Add this workflow to your repository in `.github/workflows/alnoms-guardrail.yml`.
 
 ```yaml
-name: Alnoms Cost Intelligence Guardrail
-
-on:
+name: Alnoms Cost Intelligence
+on: 
   pull_request:
-    paths:
-      - "**.py" # Only trigger when Python files are changed
-
-# REQUIRED: Allow Alnoms to post the report to the Pull Request
+    paths: ["**.py"]
 permissions:
   contents: read
   pull-requests: write
-
 jobs:
   performance-audit:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+          fetch-depth: 0 
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Install Alnoms Engine
-        run: pip install alnoms
-
-      - name: Run Alnoms Guardrail
-        uses: arprax/alnoms-guardrail@main
+      - run: pip install alnoms
+      - uses: arprax/alnoms-guardrail@main
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          fail_on: "O(N^2)"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FAIL_ON: 'O(N^2)'
 
 ```
 ## 🔓 Required Permissions
